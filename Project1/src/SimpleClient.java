@@ -7,14 +7,23 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 
-import javax.net.SocketFactory;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
 
 
+/**
+ * @author laurend
+ * 
+ * client to send and receive messages to/from a server with a simple socket or ssl socket
+ *
+ */
 public class SimpleClient {
-	//TODO: finish commenting,
-	//get rid of excess TODOs, get rid of excess printlns
+	//TODO: update makefile
 
 	//fields
 	//inputs
@@ -26,12 +35,17 @@ public class SimpleClient {
 	//streams
 	private InputStream is;
 	private OutputStream os;
-	//writers
+	//reader and writer
 	private BufferedReader reader;
 	private PrintWriter writer;
 	
 	
 	
+	/**
+	 * @param port port number to connect to on server side
+	 * @param isSSL true if the connection should be an SSL connection
+	 * @param hostname host name of server to connect to
+	 */
 	public SimpleClient(int port, boolean isSSL, String hostname) {
 		super();
 		this.port = port;
@@ -39,17 +53,33 @@ public class SimpleClient {
 		this.hostname = hostname;
 	}
 	
+	/**
+	 * creates a socket connection to this client's specified server hostname, 
+	 * port and ssl setting
+	 */
 	public void openConnection(){
-		System.out.println("opening connection");
 		
 		try {
 			//create socket connection
 			if(isSSL){
-				SocketFactory socketFactory = SSLSocketFactory.getDefault();
+				//Create TrustManager that trusts all certs
+				TrustAllManager trustAll = new TrustAllManager();
+				
+				//Add to SSL context with nonspecific keymanagers and secure random
+				SSLContext ctx = SSLContext.getInstance("SSL");
+				ctx.init(null, new TrustManager[]{trustAll}, new SecureRandom());
+				
+				//create ssl socket
+			    SSLSocketFactory socketFactory = ctx.getSocketFactory();
 	            connection = socketFactory.createSocket(hostname, port);
+		        
 			}else{
+				//create simple socket
 				connection = new Socket(hostname, port);
 			}
+			
+			//set 60 second timeout
+			connection.setSoTimeout(60000);
 			
 			//create streams
 			is = connection.getInputStream();
@@ -59,6 +89,16 @@ public class SimpleClient {
 			reader = new BufferedReader(new InputStreamReader(is));
 			writer = new PrintWriter(new OutputStreamWriter(os),true);
 			
+		} catch (NoSuchAlgorithmException e) {
+			System.out.println("Cannot get SSL context.");
+			System.out.println("Exiting with stacktrace:");
+			e.printStackTrace();
+			System.exit(1);
+		} catch (KeyManagementException e) {
+			System.out.println("Unable to initialize SSL context.");
+			System.out.println("Exiting with stacktrace:");
+			e.printStackTrace();
+			System.exit(1);	
 		} catch (UnknownHostException e) {
 			System.out.println("Could not find host.");
 			System.out.println("Exiting with stacktrace:");
@@ -73,28 +113,37 @@ public class SimpleClient {
 		
 	}
 	
+	/**
+	 * @param msg one line message to write to socket connection 
+	 * (written with line separator)
+	 */
 	public void writeMessage(String msg){
-		
-		System.out.println("Test connection: " + connection.isConnected());;
-		System.out.println("writing message: " + msg);
+		//write
 		writer.println(msg);
 	}
 	
+	/**
+	 * @return one line message received from socket connection
+	 */
 	public String receiveMessage(){
-		System.out.println("receiving message");
-		//TODO: check timing problem
-		//TODO: check for null return
-		//TODO: add timeout
+		
 		String message = null;
 		try {
+			//read
+			message = reader.readLine();
 			
-			System.out.println("Reader ready");//TODO: remove
-			message = reader.readLine()+ "\n";
+			//check message validity
+			if(message==null){
+				System.out.println("Message is null.");
+				System.out.println("Exiting...");
+				System.exit(1);
+			}
+			if(message.length()>256 || message.length()<=0){
+				System.out.println("Message is inappropriate length.");
+				System.out.println("Exiting...");
+				System.exit(1);
+			}
 			
-//			char[] charBuf = new char[256];
-//			int numCharsRead = reader.read(charBuf);//TODO: for error checking?
-//			message = new String(charBuf);//TODO: check null values are left off
-//			System.out.println("message received: " + message);//TODO: remove
 		} catch (IOException e) {
 			System.out.println("IOException on read.");
 			System.out.println("Exiting with stacktrace:");
@@ -105,17 +154,26 @@ public class SimpleClient {
 			System.out.println("Exiting with stacktrace:");
 			e.printStackTrace();
 			System.exit(1);
-		}
+		} 
 		return message;
 	}
 	
-	public void closeClient() throws IOException{
-		System.out.println("closing client");
+	/**
+	 * closes all necessary underlying state of simple client
+	 */
+	public void closeClient(){
+		try{
 			reader.close();
 			writer.close();
 			is.close();
 			os.close();
 			connection.close();
+		} catch (IOException e) {
+			System.out.println("Unable to close simple client!");
+			System.out.println("Exiting with stacktrace:");
+			e.printStackTrace();
+			System.exit(1);
+		}
 	}
 		
 }
